@@ -18,4 +18,6 @@ IDLE_TIME=3600
 echo "Starting the SageMaker autostop script in cron"
 
 # TODO: Need to understand this line of code
+# TODO: Have many different permutation as tutorial on how to use.
+# TOOD: Have tutorial on cron like what each position of the scheduler and what to change for desire results
 # (crontab -l 2>/dev/null; echo "5 * * * * /usr/bin/python $PWD/autostop.py --time $IDLE_TIME --ignore-connections") | crontab -
