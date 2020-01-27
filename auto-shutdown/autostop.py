@@ -1,26 +1,26 @@
 import boto3
 import click
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
 from notebook import notebookapp
 import requests
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 log_fn = 'autostop.log'
 datetime_format = '%Y-%m-%d %H:%M:%S'
 datetime_parse = "%Y-%m-%dT%H:%M:%S.%fz"
 
-# TODO: Remove for testing
-port = 1234
-idle_time = 3300
-ignore_connections = False
-log_level = 'DEBUG'  
+def str_to_datetime(dt):
+    """Parse str to datetime"""
+    return datetime.strptime(dt, datetime_parse)
 
 def get_time_diff(last_activity):
     """Return the time differences in seconds"""
-    last_activity = datetime.strptime(last_activity, datetime_parse)
-    return (datetime.utcnow() - last_activity).total_seconds()
+    last_activity = str_to_datetime(last_activity)
+    return int((datetime.utcnow() - last_activity).total_seconds())
 
 def get_notebook_name():
     """Get Sagemaker ID"""
@@ -31,7 +31,7 @@ def get_notebook_name():
 
 def log_time():
     """Return the str for current UTC time"""
-    return datetime.utcnow().strftime(datetime_format) + ' UTC'
+    return datetime.utcnow().isoformat(' ', 'seconds') + ' UTC'
 
 def get_jupyter_info():
     """Return a list of active notebooks in jupyter server"""
@@ -44,45 +44,21 @@ def get_jupyter_info():
                             verify=False)  # [s5] do not verify ssl ceritificates
     return response.json()  # return a list of active notebooks if any
 
-
-# TODO: Create helper functions instead of doing this. 
-def is_idle(data, idle_max, ignore_connections):
+def is_idle(data, timeout, ignore_connections):
     """Determine if jupyter is idle based on inputs"""
-    idle_min = idle_max
-    idle = True
+    idle_ls, idle_time, conn_ls = [], [], []
+
     for notebook in data:
         # Idleness is defined by Jupyter [s6]
         kernel_info = notebook.get('kernel', {})
-        # As long as there is atleast 1 active notebook
-        if kernel_info.get('execution_state') == 'busy':
-            idle = False
-        
-        # As long as someone is connected to a notebook
-        if not ignore_connections & kernel_info.get('connections', 0) > 0:
-            idle = False
-        
-        # idle in seconds based on the latest activity for all notebook
-        if kernel_info.get('execution_state') == 'idle':
-            idle_min = min(get_time_diff(notebook), idle_min)
-            if idle_min >= idle_max:
-                idle = False
-        
-        # No need to further check if there is at least one active condition
-        if not idle:
-            break
-        
-    return idle
 
+        idle_ls.append(kernel_info.get('execution_state') == 'idle')
+        idle_time.append(get_time_diff(kernel_info.get('last_activity')) >= timeout)
+        conn_ls.append(kernel_info.get('connections', 0) == 0)  
+        
+    return all(idle_ls) and all(idle_time) and (ignore_connections or all(conn_ls))
 
-
-
-# TODO: Add override for office hours? and maybe work days?
 @click.command()
-@click.option(  # TODO: Remove this. server info should have this?
-    '--port', '-p',
-    default='8443',
-    help='port number of the jupyter server. default is 8443'
-)
 @click.option(
     '--idle-time', '-t',
     default=3600,
@@ -95,10 +71,10 @@ def is_idle(data, idle_max, ignore_connections):
 )
 @click.option(
     '--log-level',
-    default='DEBUG',  # TODO: Change this to INFO
+    default='DEBUG',
     help='Logging Level between DEBUG and INFO. default is INFO'
 )
-def main(port, idle_time, ignore_connections, log_level):
+def main(idle_time, ignore_connections, log_level):
     logging.basicConfig(filename=log_fn,
                         format='%(levelname)s: %(message)s')
     logger = logging.getLogger(__name__)  # [s7]
@@ -106,56 +82,47 @@ def main(port, idle_time, ignore_connections, log_level):
     if not isinstance(numeric_level, int):
         raise ValueError(f'Invalid log level: {log_level}')
     logger.setLevel(level=numeric_level)
-    logger.info(log_time() + ' AutoStop Script Starts')
-    logger.debug(f'Parameters: port {port}, idle_time {idle_time}, ignore_connections {ignore_connections}')
+    logger.info('=' * 30)
+    logger.info('AutoStop Script Starts ' + log_time())
+    logger.debug(f'Parameters: idle_time {idle_time}, ignore_connections {ignore_connections}')
 
-
-    # get server info
-    # test if idle
-    # if idle shutdown
-    # if not do nothing and log it
+    idle = True
 
     data = get_jupyter_info()
-    logger.info(f'Number of kernels: {len(data)}')
-        
+    logger.info(f'Number of kernels: {len(data)}')        
     if len(data) > 0:
-        if log_level == 'DEBUG':
-            logger.debug(log_time() + ' Jupyter Kernels Info')
+        if log_level.upper() == 'DEBUG':    
+            logger.debug('Jupyter Kernels Info ' + log_time())
             for notebook in data:
+                kernel_info = notebook.get('kernel')
                 logger.debug((f"name: {notebook.get('path')}, "
-                               f"state: {notebook.get('kernel').get('execution_state')}, "
-                               f"last: {notebook.get('kernel').get('last_activity')}"))
+                              f"state: {kernel_info.get('execution_state')}, "
+                              f"conn: {kernel_info.get('connections')}, "
+                              f"last: {str_to_datetime(kernel_info.get('last_activity')).isoformat(' ', 'seconds')}, "
+                              f"idle_sec: {get_time_diff(kernel_info.get('last_activity'))}"))
 
-    # now need to find if server is idle
+        idle = is_idle(data, idle_time, ignore_connections)
+        logger.info(f'Based on notebooks, is idle: {idle}')
 
-    # Use case is when SageMaker first launch with has zero active notebooks so need to give it some time
-    # Also it will shutdown once all notebooks are closed. 
+    # Allow Sagemaker to warm up after just launching
     else:
-        # simplier way could be just 
         client = boto3.client('sagemaker')
         uptime = client.describe_notebook_instance(
             NotebookInstanceName=get_notebook_name()
         )['LastModifiedTime']  # sagemaker internal time is utc
-        # Bug? This will shutdown once there are zero notebook. If you just happens to close
-        # everything during the time cron checks, it will shutdown..
-        if not is_idle(uptime.strftime("%Y-%m-%dT%H:%M:%S.%fz")):
-            idle = False
-
+        idle = (datetime.now(timezone.utc) - uptime).total_seconds() >= idle_time
+        logger.info(f'Based on Sagemaker uptime, is idle: {idle}')
+        # (datetime.now(timezone.utc) - datetime.fromtimestamp(psutil.boot_time(), timezone.utc))  # might be better for uptime?
             
-    # TODO: Add the ability to have psutil cpu/gpu monitoring? Just in case script is using terminal instead
-            # simple way is just to do monitoring of cpu/gpu for the next ten minutes if below then shut down. 
-            # should record idle sttate to see how much is being used...
     if idle:
-        client = boto3.client('sagemaker')
-        client.stop_notebook_instance(
-            NotebookInstanceName=get_notebook_name()
-        )
-
+        logger.info('Sagemaker is idle; therefore, is shutting down!')
+        # client = boto3.client('sagemaker')
+        # client.stop_notebook_instance(
+        #     NotebookInstanceName=get_notebook_name()
+        # )
 
 if __name__ == "__main__":
     main()
-
-
 
 # source
 # [s1] https://github.com/jupyter/notebook/blob/f354740e57f206d67bfb077a9f23bb8d22b6b311/notebook/notebookapp.py#L413

@@ -8,7 +8,7 @@ Also the scripts will have a lot of comments to help explain what is going on an
 
 The purpose of this script is to shutdown sagemaker when jupyter is idling. This can help with cost saving. 
 
-The scripts provide by aws doesn't work and is not useful friendly so I created my own. 
+The scripts provided by aws doesn't work and is not useful friendly so I created my own. 
 
 
 ## on-start
