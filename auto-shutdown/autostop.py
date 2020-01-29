@@ -58,6 +58,7 @@ def is_idle(data, timeout, ignore_connections):
         
     return all(idle_ls) and all(idle_time) and (ignore_connections or all(conn_ls))
 
+# TODO : add a log_dir because current log file is in root which isn't save after shutdown. 
 @click.command()
 @click.option(
     '--idle-time', '-t',
@@ -70,12 +71,17 @@ def is_idle(data, timeout, ignore_connections):
     help='Stop notebook once idle, ignore connected users'
 )
 @click.option(
+    '--log-dir',
+    default='.',
+    help='Where should the autostop.log file be saved.'
+)
+@click.option(
     '--log-level',
     default='DEBUG',
     help='Logging Level between DEBUG and INFO. default is INFO'
 )
-def main(idle_time, ignore_connections, log_level):
-    logging.basicConfig(filename=log_fn,
+def main(idle_time, ignore_connections, log_dir, log_level):
+    logging.basicConfig(filename=str(Path(log_dir)/log_fn),
                         format='%(levelname)s: %(message)s')
     logger = logging.getLogger(__name__)  # [s7]
     numeric_level = getattr(logging, log_level.upper(), None)
