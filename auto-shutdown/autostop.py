@@ -35,7 +35,7 @@ def log_time():
 
 def get_jupyter_info():
     """Return a list of active notebooks in jupyter server"""
-    # assume there is only 1 jupyter session on server
+    # assumes there is only 1 jupyter session on server
     server_info = list(notebookapp.list_running_servers())[0]  # [s1] get server info
     headers = {'Authorization': 'token ' + server_info['token'], 
                'Connection':'close'}  # [s3] to be safe
@@ -58,7 +58,6 @@ def is_idle(data, timeout, ignore_connections):
         
     return all(idle_ls) and all(idle_time) and (ignore_connections or all(conn_ls))
 
-# TODO : add a log_dir because current log file is in root which isn't save after shutdown. 
 @click.command()
 @click.option(
     '--idle-time', '-t',
