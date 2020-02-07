@@ -100,7 +100,7 @@ def main(idle_time, ignore_connections, log_dir, log_level):
             logger.debug('Jupyter Kernels Info ' + log_time())
             for notebook in data:
                 kernel_info = notebook.get('kernel')
-                logger.debug((f"name: {notebook.get('path')}, "
+                logger.debug((f"name: {Path(notebook.get('path')).name}, "
                               f"state: {kernel_info.get('execution_state')}, "
                               f"conn: {kernel_info.get('connections')}, "
                               f"last: {str_to_datetime(kernel_info.get('last_activity')).isoformat(' ', 'seconds')}, "
@@ -121,10 +121,10 @@ def main(idle_time, ignore_connections, log_dir, log_level):
             
     if idle:
         logger.info('Sagemaker is idle; therefore, is shutting down!')
-        # client = boto3.client('sagemaker')
-        # client.stop_notebook_instance(
-        #     NotebookInstanceName=get_notebook_name()
-        # )
+        client = boto3.client('sagemaker')
+        client.stop_notebook_instance(
+            NotebookInstanceName=get_notebook_name()
+        )
 
 if __name__ == "__main__":
     main()
