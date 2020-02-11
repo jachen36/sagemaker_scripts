@@ -8,6 +8,11 @@ conda install click -y
 # into serious issues when they could have been caught earlier. [s2]
 set -o errexit
 
+# Example starting script
+# cd [location of the scripts]  # cron look for the autostop.py in the pwd when crontab is initially called
+# bash start.sh
+# cd ~
+
 # Overview
 # IDLE_TIME = how often to run script and how long to idle before shutdown (1 hour default)
 # LOG_DIR = where should the log file for this script be saved. Default is root folder. 
@@ -23,13 +28,13 @@ echo "Starting the SageMaker autostop script in cron"
 
 # Sample cron command
 # Check for idle status every 5 minutes and save log file at present working directory
-echo "*/5 * * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR" | crontab -
+# echo "*/5 * * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR" | crontab -
 
 # Check for idle status every min
 # echo "* * * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR" | crontab -
 
 # Check for idle status at the start of the hour only during the hours from 2-17 which is PST non-business hours (6pm - 7am)
-# echo "0 2-17 * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR" | crontab -
+echo "0 2-17 * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR --ignore-connections" | crontab -
 
 # Check for idle status every min while ignoring the fact that someone's browser is still accessing the notebooks
 # echo "* * * * * /home/ec2-user/anaconda3/envs/JupyterSystemEnv/bin/python3.6 $PWD/autostop.py --idle-time $IDLE_TIME --log-dir $LOG_DIR --ignore-connections" | crontab -
